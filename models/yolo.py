@@ -28,7 +28,14 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
+'''
+    output:
+    train:
+        x : [x1,x2,x3]: xi: (bs,3,Fsize,Fsize,85)
+    Inference:
+        (torch.cat(z, 1), x)
+        in which torch.cat(z, 1): (bs,N,85), N is Fsize1 ** 2 + Fsize2 ** 2 + Fsize3 ** 2
+'''
 class Detect(nn.Module):
     stride = None  # strides computed during build
     onnx_dynamic = False  # ONNX export parameter

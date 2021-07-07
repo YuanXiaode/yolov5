@@ -259,7 +259,7 @@ def plot_study_txt(path='', x=None):  # from utils.plots import *; plot_study_tx
     fig2, ax2 = plt.subplots(1, 1, figsize=(8, 4), tight_layout=True)
     # for f in [Path(path) / f'study_coco_{x}.txt' for x in ['yolov5s6', 'yolov5m6', 'yolov5l6', 'yolov5x6']]:
     for f in sorted(Path(path).glob('study*.txt')):
-        y = np.loadtxt(f, dtype=np.float32, usecols=[0, 1, 2, 3, 7, 8, 9], ndmin=2).T
+        y = np.loadtxt(f, dtype=np.float32, usecols=[0, 1, 2, 3, 7, 8, 9], ndmin=2).T  # shape (7, image_size_num)
         x = np.arange(y.shape[1]) if x is None else np.array(x)
         if plot2:
             s = ['P', 'R', 'mAP@.5', 'mAP@.5:.95', 't_preprocess (ms/img)', 't_inference (ms/img)', 't_NMS (ms/img)']
@@ -267,7 +267,7 @@ def plot_study_txt(path='', x=None):  # from utils.plots import *; plot_study_tx
                 ax[i].plot(x, y[i], '.-', linewidth=2, markersize=8)
                 ax[i].set_title(s[i])
 
-        j = y[3].argmax() + 1
+        j = y[3].argmax() + 1 # 只画mAP@.5:.95最大对应的分辨率及以下的结果
         ax2.plot(y[5, 1:j], y[3, 1:j] * 1E2, '.-', linewidth=2, markersize=8,
                  label=f.stem.replace('study_coco_', '').replace('yolo', 'YOLO'))
 

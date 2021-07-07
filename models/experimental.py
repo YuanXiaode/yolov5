@@ -103,13 +103,13 @@ class Ensemble(nn.ModuleList):
     def forward(self, x, augment=False):
         y = []
         for module in self:
-            y.append(module(x, augment)[0])
+            y.append(module(x, augment)[0]) # 只用于推理
         # y = torch.stack(y).max(0)[0]  # max ensemble
         # y = torch.stack(y).mean(0)  # mean ensemble
         y = torch.cat(y, 1)  # nms ensemble
         return y, None  # inference, train output
 
-
+# 就是多个model 进行 inference，将结果合一起
 def attempt_load(weights, map_location=None, inplace=True):
     from models.yolo import Detect, Model
 
@@ -126,7 +126,7 @@ def attempt_load(weights, map_location=None, inplace=True):
         elif type(m) is Conv:
             m._non_persistent_buffers_set = set()  # pytorch 1.6.0 compatibility
 
-    if len(model) == 1:
+    if len(model) == 1:  # 单个model就不需要集成
         return model[-1]  # return model
     else:
         print(f'Ensemble created with {weights}\n')

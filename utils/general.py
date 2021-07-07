@@ -471,7 +471,7 @@ def clip_coords(boxes, img_shape):
         boxes[:, 2].clip(0, img_shape[1], out=boxes[:, 2])  # x2
         boxes[:, 3].clip(0, img_shape[0], out=boxes[:, 3])  # y2
 
-
+# output: [o1,o2,...,obs]，oi shape is (m,6)，m是结果数目，6是 xyxy,conf,cls
 def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False, multi_label=False,
                         labels=(), max_det=300):
     """Runs Non-Maximum Suppression (NMS) on inference results
@@ -481,7 +481,7 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
     """
 
     nc = prediction.shape[2] - 5  # number of classes
-    xc = prediction[..., 4] > conf_thres  # candidates
+    xc = prediction[..., 4] > conf_thres  # candidates 先用置信度过滤一下
 
     # Checks
     assert 0 <= conf_thres <= 1, f'Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0'
@@ -500,10 +500,10 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
         # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height
-        x = x[xc[xi]]  # confidence
+        x = x[xc[xi]]  # confidence (m,85)
 
         # Cat apriori labels if autolabelling
-        if labels and len(labels[xi]):
+        if labels and len(labels[xi]): # 将一些先验的labels放入预测结果中  label中放的是 (cls,xywh)
             l = labels[xi]
             v = torch.zeros((len(l), nc + 5), device=x.device)
             v[:, :4] = l[:, 1:5]  # box
@@ -515,21 +515,21 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
         if not x.shape[0]:
             continue
 
-        # Compute conf
+        # Compute conf 置信度 * 每个类别的预测值 = 每个类别的置信度
         x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
 
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(x[:, :4])
 
         # Detections matrix nx6 (xyxy, conf, cls)
-        if multi_label:
+        if multi_label:  # 保留类别置信度大于阈值的结果。（若一个box对应的80个类别有k个大于阈值，则会保留k个结果，即一个box多标签）
             i, j = (x[:, 5:] > conf_thres).nonzero(as_tuple=False).T
-            x = torch.cat((box[i], x[i, j + 5, None], j[:, None].float()), 1)
-        else:  # best class only
-            conf, j = x[:, 5:].max(1, keepdim=True)
+            x = torch.cat((box[i], x[i, j + 5, None], j[:, None].float()), 1)  # shape (m',6)
+        else:  # best class only 一个box，只会保留置信度最大的类别（且大于阈值）。
+            conf, j = x[:, 5:].max(1, keepdim=True)  # 取置信度最大的类别且大于阈值的
             x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
 
-        # Filter by class
+        # Filter by class  只取classes中类别对应的预测值
         if classes is not None:
             x = x[(x[:, 5:6] == torch.tensor(classes, device=x.device)).any(1)]
 
@@ -546,17 +546,18 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
 
         # Batched NMS
         c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
-        boxes, scores = x[:, :4] + c, x[:, 4]  # boxes (offset by class), scores
+        boxes, scores = x[:, :4] + c, x[:, 4]  # boxes (offset by class), scores 这里就是将不同类别的box坐标分开，以免mns时候互相取消
         i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
         if i.shape[0] > max_det:  # limit detections
             i = i[:max_det]
         if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)
             # update boxes as boxes(i,4) = weights(i,n) * boxes(n,4)
-            iou = box_iou(boxes[i], boxes) > iou_thres  # iou matrix
+            iou = box_iou(boxes[i], boxes) > iou_thres  # iou matrix  (M,4) + (N,4) -> (M,N)
             weights = iou * scores[None]  # box weights
-            x[i, :4] = torch.mm(weights, x[:, :4]).float() / weights.sum(1, keepdim=True)  # merged boxes
+            # 其实就是 xmnsi = wi0 * x0 + wi1 * x1 + wi2 * x2 + ... + wiN * xN，wij由iou和置信度算出
+            x[i, :4] = torch.mm(weights, x[:, :4]).float() / weights.sum(1, keepdim=True)  # merged boxes   (N,4) = (M,N) * (N,4)
             if redundant:
-                i = i[iou.sum(1) > 1]  # require redundancy
+                i = i[iou.sum(1) > 1]  # require redundancy  Yuan: iou.sum(1) > 1 代表这个mns选出来的box必定与其他box有交集，这句话就是过滤孤立的box
 
         output[xi] = x[i]
         if (time.time() - t) > time_limit:
@@ -612,7 +613,7 @@ def print_mutation(hyp, results, yaml_file='hyp_evolved.yaml', bucket=''):
     if bucket:
         os.system('gsutil cp evolve.txt %s gs://%s' % (yaml_file, bucket))  # upload
 
-
+# 就是将检测的每个box放入分类网络，最后只保留检测类别 = 分类类别的结果
 def apply_classifier(x, model, img, im0):
     # Apply a second stage classifier to yolo outputs
     im0 = [im0] if isinstance(im0, np.ndarray) else im0

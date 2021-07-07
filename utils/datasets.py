@@ -151,7 +151,7 @@ class _RepeatSampler(object):
         while True:
             yield from iter(self.sampler)
 
-
+# 分析本地的视频和图片
 class LoadImages:  # for inference
     def __init__(self, path, img_size=640, stride=32):
         p = str(Path(path).absolute())  # os-agnostic absolute path
@@ -170,7 +170,7 @@ class LoadImages:  # for inference
 
         self.img_size = img_size
         self.stride = stride
-        self.files = images + videos
+        self.files = images + videos # 注意这里，self.files 的图像和视频是分开排列的
         self.nf = ni + nv  # number of files
         self.video_flag = [False] * ni + [True] * nv
         self.mode = 'image'
@@ -194,7 +194,7 @@ class LoadImages:  # for inference
             # Read video
             self.mode = 'video'
             ret_val, img0 = self.cap.read()
-            if not ret_val:
+            if not ret_val: # 已读完一个视频文件
                 self.count += 1
                 self.cap.release()
                 if self.count == self.nf:  # last video
@@ -272,7 +272,7 @@ class LoadWebcam:  # for inference
     def __len__(self):
         return 0
 
-
+# 分析网页视频，画面进行letterbox
 class LoadStreams:  # multiple IP or RTSP cameras
     def __init__(self, sources='streams.txt', img_size=640, stride=32):
         self.mode = 'stream'
@@ -294,9 +294,9 @@ class LoadStreams:  # multiple IP or RTSP cameras
             if 'youtube.com/' in s or 'youtu.be/' in s:  # if source is YouTube video
                 check_requirements(('pafy', 'youtube_dl'))
                 import pafy
-                s = pafy.new(s).getbest(preftype="mp4").url  # YouTube URL
+                s = pafy.new(s).getbest(preftype="mp4").url  # YouTube URL  getbest:最高清晰度
             s = eval(s) if s.isnumeric() else s  # i.e. s = '0' local webcam
-            cap = cv2.VideoCapture(s)
+            cap = cv2.VideoCapture(s) # 这里s是网址
             assert cap.isOpened(), f'Failed to open {s}'
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -309,7 +309,7 @@ class LoadStreams:  # multiple IP or RTSP cameras
             self.threads[i].start()
         print('')  # newline
 
-        # check for common shapes
+        # check for common shapes 这里letterbox只是为了检查shape而已，图像的处理在 __next__ 里
         s = np.stack([letterbox(x, self.img_size, stride=self.stride)[0].shape for x in self.imgs], 0)  # shapes
         self.rect = np.unique(s, axis=0).shape[0] == 1  # rect inference if all shapes equal
         if not self.rect:

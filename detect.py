@@ -14,7 +14,7 @@ import torch
 import torch.backends.cudnn as cudnn
 
 FILE = Path(__file__).absolute()
-sys.path.append(FILE.parents[0].as_posix())  # add yolov5/ to path
+sys.path.append(FILE.parents[0].as_posix())  # add yolov5/ to path  as_posix():window的路径分隔符\改为/
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
@@ -75,7 +75,6 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
     if classify:
         modelc = load_classifier(name='resnet50', n=2)  # initialize
         modelc.load_state_dict(torch.load('resnet50.pt', map_location=device)['model']).to(device).eval()
-
     # Dataloader
     if webcam:
         view_img = check_imshow()
@@ -89,7 +88,7 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
 
     # Run inference
     if device.type != 'cpu':
-        model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
+        model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once 第一次运行总是比较慢，先跑一次模型，后面测速比较准
     t0 = time.time()
     for path, img, im0s, vid_cap in dataset:
         img = torch.from_numpy(img).to(device)
@@ -97,10 +96,9 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
-
         # Inference
         t1 = time_synchronized()
-        pred = model(img, augment=augment)[0]
+        pred = model(img, augment=augment)[0] # (bs,n,85)
 
         # Apply NMS
         pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)

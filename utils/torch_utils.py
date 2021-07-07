@@ -48,7 +48,7 @@ def init_torch_seeds(seed=0):
 
 def date_modified(path=__file__):
     # return human-readable file modification date, i.e. '2021-3-26'
-    t = datetime.datetime.fromtimestamp(Path(path).stat().st_mtime)
+    t = datetime.datetime.fromtimestamp(Path(path).stat().st_mtime)  # Path(path).stat().st_mtime:获取该路径的时间戳；再将时间戳转化为可读时间
     return f'{t.year}-{t.month}-{t.day}'
 
 
