@@ -7,7 +7,6 @@ from PIL import Image
 from pathlib import Path
 import re
 import platform
-import pkg_resources as pkg
 import os
 from itertools import repeat
 import time
@@ -20,8 +19,7 @@ import pandas as pd
 import seaborn as sns
 import argparse
 import datetime
+# import albumentations as A
+# import cv2 as cv
 
-a = np.array([1,2,3])
-print(a)
-print(a[:])
-print(a[[1,1,2]])
+print(range(10)[5])

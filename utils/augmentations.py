@@ -81,7 +81,8 @@ def replicate(im, labels):
 
     return im, labels
 
-
+# scaleup=True: 直接伸缩至new_shape
+# auto=True： minimum rectangle，长边是new_shape，短边不一定
 def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True, stride=32):
     # Resize and pad image while meeting stride-multiple constraints
     shape = im.shape[:2]  # current shape [height, width]

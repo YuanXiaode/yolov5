@@ -117,7 +117,7 @@ def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=Non
                         collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn)
     return dataloader, dataset
 
-
+# 看不懂
 class InfiniteDataLoader(torch.utils.data.dataloader.DataLoader):
     """ Dataloader that reuses workers
 
@@ -149,7 +149,7 @@ class _RepeatSampler(object):
 
     def __iter__(self):
         while True:
-            yield from iter(self.sampler)
+            yield from iter(self.sampler)  # 协程
 
 # 分析本地的视频和图片
 class LoadImages:  # for inference
@@ -372,7 +372,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.mosaic_border = [-img_size // 2, -img_size // 2]
         self.stride = stride
         self.path = path
-        self.albumentations = Albumentations() if augment else None
+        self.albumentations = Albumentations() if augment else None  # 一个极其快速高效的图片数据增强库
 
         try:
             f = []  # image files
@@ -399,7 +399,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.label_files = img2label_paths(self.img_files)  # labels
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')  # cached labels
         if cache_path.is_file():
-            cache, exists = torch.load(cache_path), True  # load
+            cache, exists = torch.load(cache_path), True  # load  直接加载
             if cache.get('version') != 0.3 or cache.get('hash') != get_hash(self.label_files + self.img_files):
                 cache, exists = self.cache_labels(cache_path, prefix), False  # re-cache
         else:
@@ -407,7 +407,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         # Display cache
         nf, nm, ne, nc, n = cache.pop('results')  # found, missing, empty, corrupted, total
-        if exists:
+        if exists: # 直接加载的打印信息（重新加载的加载时已经打印了）
             d = f"Scanning '{cache_path}' images and labels... {nf} found, {nm} missing, {ne} empty, {nc} corrupted"
             tqdm(None, desc=prefix + d, total=n, initial=n)  # display cache results
             if cache['msgs']:
@@ -419,7 +419,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         labels, shapes, self.segments = zip(*cache.values())
         self.labels = list(labels)
         self.shapes = np.array(shapes, dtype=np.float64)
-        self.img_files = list(cache.keys())  # update
+        self.img_files = list(cache.keys())  # update   缓存时会剔除坏文件，因此需要更新下文件名
         self.label_files = img2label_paths(cache.keys())  # update
         if single_cls:
             for x in self.labels:
@@ -529,10 +529,12 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         else:
             # Load image
+            # 假设 h > w, 则 (h,w) -> (img_size, img_size * w / h)
             img, (h0, w0), (h, w) = load_image(self, index)
 
             # Letterbox
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
+            # (img_size, img_size * w / h) -> shape
             img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
@@ -855,7 +857,7 @@ def verify_image_label(args):
         if im.format.lower() in ('jpg', 'jpeg'):
             with open(im_file, 'rb') as f:
                 f.seek(-2, 2)
-                assert f.read() == b'\xff\xd9', 'corrupted JPEG'
+                assert f.read() == b'\xff\xd9', 'corrupted JPEG'  ## 图片结尾标志，判断图片是否完整（网速、内存等可能导致下载的图片不完整）
 
         # verify labels
         segments = []  # instance segments
