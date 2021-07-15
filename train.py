@@ -119,7 +119,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             weights = attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
         model = Model(cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
-        exclude = ['anchor'] if (cfg or hyp.get('anchors')) and not resume else []  # exclude keys
+        exclude = ['anchor'] if (cfg or hyp.get('anchors')) and not resume else []  # exclude keys  # anchor用opt.cfg里的值，不用保存的值
         state_dict = ckpt['model'].float().state_dict()  # to FP32
         state_dict = intersect_dicts(state_dict, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(state_dict, strict=False)  # load
@@ -528,8 +528,8 @@ def main(opt):
         check_requirements(exclude=['thop'])
 
     # Resume
-    wandb_run = check_wandb_resume(opt)
-    if opt.resume and not wandb_run:  # resume an interrupted run
+    wandb_run = check_wandb_resume(opt) # 应该是从wandb上恢复模型
+    if opt.resume and not wandb_run:  # resume an interrupted run  从 opt.yaml 中恢复模型
         ckpt = opt.resume if isinstance(opt.resume, str) else get_latest_run()  # specified or most recent path
         assert os.path.isfile(ckpt), 'ERROR: --resume checkpoint does not exist'
         with open(Path(ckpt).parent.parent / 'opt.yaml') as f:
@@ -558,7 +558,7 @@ def main(opt):
     # Train
     if not opt.evolve:
         train(opt.hyp, opt, device)
-        if WORLD_SIZE > 1 and RANK == 0:
+        if WORLD_SIZE > 1 and RANK == 0: # RANK == 0 指主机
             _ = [print('Destroying process group... ', end=''), dist.destroy_process_group(), print('Done.')]
 
     # Evolve hyperparameters (optional)

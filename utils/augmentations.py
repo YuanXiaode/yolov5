@@ -115,7 +115,12 @@ def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleF
     im = cv2.copyMakeBorder(im, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
     return im, ratio, (dw, dh)
 
-
+# 这个从单应性矩阵可以推到，设(x',y',1) = M@(x,y,1)
+# x' = (M11x+M12y+M13)/(M31x+M32y+1)
+# y' = (M21y+M22y+M13)/(M31x+M32y+1)
+# 如剪切时，M11 = M22 = M33 = 1,M13 = dx, M23 = dy，带入上式，得：x' = x + dx; y' = y + dy
+# 旋转时：M31 = M32 = 0； 测试一下可以知道 M = cv2.getRotationMatrix2D(angle=a, center=(0, 0), scale=s) 中的 M13 = M23 = 0
+# 因此 x' = M11x+M12y; y' = M21y+M22y； 其他依次类推
 def random_perspective(im, targets=(), segments=(), degrees=10, translate=.1, scale=.1, shear=10, perspective=0.0,
                        border=(0, 0)):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10))
@@ -197,31 +202,34 @@ def random_perspective(im, targets=(), segments=(), degrees=10, translate=.1, sc
             new[:, [0, 2]] = new[:, [0, 2]].clip(0, width)
             new[:, [1, 3]] = new[:, [1, 3]].clip(0, height)
 
-        # filter candidates
+        # filter candidates 排除一些变换后畸变严重的框
         i = box_candidates(box1=targets[:, 1:5].T * s, box2=new.T, area_thr=0.01 if use_segments else 0.10)
         targets = targets[i]
         targets[:, 1:5] = new[i]
 
     return im, targets
 
-
+# 复制粘贴增强，效果不错的，比mixup强
+# 下面代码的意思是，随机挑几个目标，将其复制到水平对称位置，且增加对应的labels和segments
 def copy_paste(im, labels, segments, probability=0.5):
     # Implement Copy-Paste augmentation https://arxiv.org/abs/2012.07177, labels as nx5 np.array(cls, xyxy)
     n = len(segments)
     if probability and n:
         h, w, c = im.shape  # height, width, channels
         im_new = np.zeros(im.shape, np.uint8)
-        for j in random.sample(range(n), k=round(probability * n)):
+        for j in random.sample(range(n), k=round(probability * n)): # 随机选k个
             l, s = labels[j], segments[j]
-            box = w - l[3], l[2], w - l[1], l[4]
+            box = w - l[3], l[2], w - l[1], l[4]  ## 就是 box 左右flip
             ioa = bbox_ioa(box, labels[:, 1:5])  # intersection over area
             if (ioa < 0.30).all():  # allow 30% obscuration of existing labels
                 labels = np.concatenate((labels, [[l[0], *box]]), 0)
                 segments.append(np.concatenate((w - s[:, 0:1], s[:, 1:2]), 1))
-                cv2.drawContours(im_new, [segments[j].astype(np.int32)], -1, (255, 255, 255), cv2.FILLED)
+                # 注意这里，cv2.FILLED表示提取轮廓及内部；
+                # 注意 segments[j] 表示翻转前的区域
+                cv2.drawContours(im_new, [segments[j].astype(np.int32)], -1, (255, 255, 255), cv2.FILLED) # 注意这里，cv2.FILLED表示提取轮廓及内部
 
-        result = cv2.bitwise_and(src1=im, src2=im_new)
-        result = cv2.flip(result, 1)  # augment segments (flip left-right)
+        result = cv2.bitwise_and(src1=im, src2=im_new)  # bitwise_and： 效果是轮廓内部是图像，外部是黑的
+        result = cv2.flip(result, 1)  # augment segments (flip left-right)  左区域翻转到右区域
         i = result > 0  # pixels to replace
         # i[:, :] = result.max(2).reshape(h, w, 1)  # act over ch
         im[i] = result[i]  # cv2.imwrite('debug.jpg', img)  # debug

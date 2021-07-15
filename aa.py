@@ -16,10 +16,12 @@ import glob
 import random
 import math
 import pandas as pd
-import seaborn as sns
+# import seaborn as sns
 import argparse
 import datetime
 # import albumentations as A
-# import cv2 as cv
+import cv2 as cv
 
-print(range(10)[5])
+a = "aaa"
+a.ge
+print(a.item())

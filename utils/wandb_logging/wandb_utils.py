@@ -144,6 +144,7 @@ class WandbLogger():
             wandb_data_dict = yaml.safe_load(f)
         return wandb_data_dict
 
+    # 大概意思就是从WANDB上下载模型和数据，并更新opt和data_dict
     def setup_training(self, opt, data_dict):
         self.log_dict, self.current_epoch, self.log_imgs = {}, 0, 16  # Logging Constants
         self.bbox_interval = opt.bbox_interval
@@ -156,6 +157,8 @@ class WandbLogger():
                     self.weights), config.save_period, config.total_batch_size, config.bbox_interval, config.epochs, \
                                                                                                        config.opt['hyp']
             data_dict = dict(self.wandb_run.config.data_dict)  # eliminates the need for config file to resume
+
+            # 如果 upload_dataset=True ，则前面已经在check_and_upload_dataset函数中获取了val_artifact，不用再下载一遍
         if 'val_artifact' not in self.__dict__:  # If --upload_dataset is set, use the existing artifact, don't download
             self.train_artifact_path, self.train_artifact = self.download_dataset_artifact(data_dict.get('train'),
                                                                                            opt.artifact_alias)
@@ -214,6 +217,7 @@ class WandbLogger():
                            aliases=['latest', 'last', 'epoch ' + str(self.current_epoch), 'best' if best_model else ''])
         print("Saving model artifact on epoch ", epoch + 1)
 
+    # 加载数据的table；重新保存一份data_file；做一个val数据集的map：图像名：图像ID
     def log_dataset_artifact(self, data_file, single_cls, project, overwrite_config=False):
         with open(data_file) as f:
             data = yaml.safe_load(f)  # data dict
@@ -249,8 +253,9 @@ class WandbLogger():
         self.val_table_map = {}
         print("Mapping dataset")
         for i, data in enumerate(tqdm(self.val_table.data)):
-            self.val_table_map[data[3]] = data[0]
+            self.val_table_map[data[3]] = data[0]  # data[3] 是图像名；data[0]是图像ID
 
+    # table保存了数据据的路径、图像id，图像类别和box
     def create_dataset_table(self, dataset, class_to_id, name='dataset'):
         # TODO: Explore multiprocessing to slpit this loop parallely| This is essential for speeding up the the logging
         artifact = wandb.Artifact(name=name, type="dataset")

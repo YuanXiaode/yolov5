@@ -87,7 +87,7 @@ def run(data,
         model.half()
 
     # Configure
-    model.eval() # 其实在 attempt_load 调过了.eval()
+    model.eval() # 其实在 attempt_load 里用了.eval()
     is_coco = type(data['val']) is str and data['val'].endswith('coco/val2017.txt')  # COCO dataset
     nc = 1 if single_cls else int(data['nc'])  # number of classes
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
@@ -154,7 +154,7 @@ def run(data,
             # Predictions
             if single_cls:
                 pred[:, 5] = 0
-            predn = pred.clone()
+            predn = pred.clone() # 原尺寸img对应的pred
             scale_coords(img[si].shape[1:], predn[:, :4], shapes[si][0], shapes[si][1])  # native-space pred
 
             # Append to text file
@@ -176,7 +176,7 @@ def run(data,
                                  "domain": "pixel"} for *xyxy, conf, cls in pred.tolist()]
                     boxes = {"predictions": {"box_data": box_data, "class_labels": names}}  # inference-space
                     wandb_images.append(wandb_logger.wandb.Image(img[si], boxes=boxes, caption=path.name))
-            wandb_logger.log_training_progress(predn, path, names) if wandb_logger and wandb_logger.wandb_run else None
+            wandb_logger.log_training_progress(predn, path, names) if wandb_logger and wandb_logger.wandb_run else None  ## 保存 result_table
 
             # Append to pycocotools JSON dictionary
             if save_json:
@@ -197,7 +197,7 @@ def run(data,
                 tcls_tensor = labels[:, 0]
 
                 # target boxes
-                tbox = xywh2xyxy(labels[:, 1:5])
+                tbox = xywh2xyxy(labels[:, 1:5])  ## label变回原尺寸img对应的label
                 scale_coords(img[si].shape[1:], tbox, shapes[si][0], shapes[si][1])  # native-space labels
                 if plots:
                     confusion_matrix.process_batch(predn, torch.cat((labels[:, 0:1], tbox), 1))
@@ -210,11 +210,15 @@ def run(data,
                     # Search for detections
                     if pi.shape[0]:
                         # Prediction to target ious
+                        # 设 len(pi) = m, len(ti) = n, box_iou的输出为 (m,n)，下面代码找出预测框对应的最佳目标框
                         ious, i = box_iou(predn[pi, :4], tbox[ti]).max(1)  # best ious, indices
 
                         # Append detections
-                        detected_set = set()
+                        detected_set = set() # 保证每一类中，每个pred只和一个target对应
                         for j in (ious > iouv[0]).nonzero(as_tuple=False):
+                            # 有点绕,i是每个预测框对应的最佳目标框的id，j是只取最佳 iou > iouv[0]的预测框
+                            # 因此i[j]表示满足条件的预测框对应的最佳目标框的id. ti表示该类的目标框id,
+                            # 最后d表示cls类中，满足条件的预测框对应的最佳目标框的id
                             d = ti[i[j]]  # detected target
                             if d.item() not in detected_set:
                                 detected_set.add(d.item())

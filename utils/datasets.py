@@ -359,7 +359,10 @@ def img2label_paths(img_paths):
     sa, sb = os.sep + 'images' + os.sep, os.sep + 'labels' + os.sep  # /images/, /labels/ substrings
     return [sb.join(x.rsplit(sa, 1)).rsplit('.', 1)[0] + '.txt' for x in img_paths]
 
-
+## 输出： img (bs,h,w,c)  RGB格式 0-255
+##       label (N,6)  N指一个bs中所有label的数量，后面的6指的是 (image_index,class,x,y,w,h)  x,y,w,h 是归一化的,x,y,指
+##       path  元组， 每个元素都是图片路径
+##       shapes 元组，每个元素都是 (h0, w0), ((h / h0, w / w0), pad)
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
                  cache_images=False, single_cls=False, stride=32, pad=0.0, prefix=''):
@@ -539,7 +542,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
             labels = self.labels[index].copy()
-            if labels.size:  # normalized xywh to pixel xyxy format
+            if labels.size:  # normalized xywh to pixel xyxy format  注意这里label需要跟着image尺寸一起变的
                 labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
 
             if self.augment:
@@ -605,11 +608,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         s = torch.tensor([[1, 1, .5, .5, .5, .5]])  # scale
         for i in range(n):  # zidane torch.zeros(16,3,720,1280)  # BCHW
             i *= 4
-            if random.random() < 0.5:
+            if random.random() < 0.5:  # 图放大两倍
                 im = F.interpolate(img[i].unsqueeze(0).float(), scale_factor=2., mode='bilinear', align_corners=False)[
                     0].type(img[i].type())
                 l = label[i]
-            else:
+            else:   # 四张图拼起来，且label合一起
                 im = torch.cat((torch.cat((img[i], img[i + 1]), 1), torch.cat((img[i + 2], img[i + 3]), 1)), 2)
                 l = torch.cat((label[i], label[i + 1] + ho, label[i + 2] + wo, label[i + 3] + ho + wo), 0) * s
             img4.append(im)
@@ -685,6 +688,7 @@ def load_mosaic(self, index):
 
     # Augment
     img4, labels4, segments4 = copy_paste(img4, labels4, segments4, probability=self.hyp['copy_paste'])
+    # 这里尺寸应该是从s2 变成了 s
     img4, labels4 = random_perspective(img4, labels4, segments4,
                                        degrees=self.hyp['degrees'],
                                        translate=self.hyp['translate'],
