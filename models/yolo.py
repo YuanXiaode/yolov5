@@ -60,7 +60,6 @@ class Detect(nn.Module):
             x[i] = self.m[i](x[i])  # conv
             bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
-
             if not self.training:  # inference
                 if self.grid[i].shape[2:4] != x[i].shape[2:4] or self.onnx_dynamic:
                     self.grid[i] = self._make_grid(nx, ny).to(x[i].device)
@@ -112,11 +111,14 @@ class Model(nn.Module):
         if isinstance(m, Detect):
             s = 256  # 2x min stride
             m.inplace = self.inplace
+            # 正向运行一次模型，输出为(bs,3,size,size,85)，因此可以得到stride (8,16,32)
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+            # BUG 1： 我认为m.anchors /= m.stride.view(-1, 1, 1) 应该在 check_anchor_order(m) 后面
             m.anchors /= m.stride.view(-1, 1, 1)
             check_anchor_order(m)
             self.stride = m.stride
             self._initialize_biases()  # only run once
+            self._print_biases()
             # logger.info('Strides: %s' % m.stride.tolist())
 
         # Init weights, biases
@@ -143,6 +145,8 @@ class Model(nn.Module):
             y.append(yi)
         return torch.cat(y, 1), None  # augmented inference, train
 
+    # BUG 2: profile = True 就会报错，原因是detect模块不能连续跑。(detect是in-place的，跑一次后，x形状就变了 x(bs,255,20,20) to x(bs,3,20,20,85))
+    # BUG 3:feature_vis 在bs != 1 时就会报错
     def forward_once(self, x, profile=False, feature_vis=False):
         y, dt = [], []  # outputs
         for m in self.model:
@@ -164,7 +168,6 @@ class Model(nn.Module):
 
             if feature_vis and m.type == 'models.common.SPP':
                 feature_visualization(x, m.type, m.i)
-
         if profile:
             logger.info('%.1fms total' % sum(dt))
         return x
@@ -186,6 +189,7 @@ class Model(nn.Module):
             p = torch.cat((x, y, wh, p[..., 4:]), -1)
         return p
 
+    # 具体值是怎么算出来的，文章也没
     def _initialize_biases(self, cf=None):  # initialize biases into Detect(), cf is class frequency
         # https://arxiv.org/abs/1708.02002 section 3.3
         # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1.
@@ -193,7 +197,7 @@ class Model(nn.Module):
         for mi, s in zip(m.m, m.stride):  # from
             b = mi.bias.view(m.na, -1)  # conv.bias(255) to (3,85)
             b.data[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-            b.data[:, 5:] += math.log(0.6 / (m.nc - 0.99)) if cf is None else torch.log(cf / cf.sum())  # cls
+            b.data[:, 5:] += math.log(0.6 / (m.nc - 0.99)) if cf is None else torch.log(cf / cf.sum())  # cls math.log 默认以e为底
             mi.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
 
     def _print_biases(self):
@@ -245,12 +249,12 @@ class Model(nn.Module):
 def parse_model(d, ch):  # model_dict, input_channels(3)
     logger.info('\n%3s%18s%3s%10s  %-40s%-30s' % ('', 'from', 'n', 'params', 'module', 'arguments'))
     anchors, nc, gd, gw = d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple']
-    na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
+    na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors 每层anchors数
     no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
 
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
     for i, (f, n, m, args) in enumerate(d['backbone'] + d['head']):  # from, number, module, args
-        m = eval(m) if isinstance(m, str) else m  # eval strings
+        m = eval(m) if isinstance(m, str) else m  # eval strings m是模块名称
         for j, a in enumerate(args):
             try:
                 args[j] = eval(a) if isinstance(a, str) else a  # eval strings
@@ -260,25 +264,25 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         n = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, DWConv, MixConv2d, Focus, CrossConv, BottleneckCSP,
                  C3, C3TR]:
-            c1, c2 = ch[f], args[0]
+            c1, c2 = ch[f], args[0]  ## ch[f] 是输入该层的通道数，args[0] 是输出通道数
             if c2 != no:  # if not output
                 c2 = make_divisible(c2 * gw, 8)
 
-            args = [c1, c2, *args[1:]]
+            args = [c1, c2, *args[1:]] # [c1,c2,other]
             if m in [BottleneckCSP, C3, C3TR]:
-                args.insert(2, n)  # number of repeats
+                args.insert(2, n)  # number of repeats  [c1,c2,n,other]
                 n = 1
         elif m is nn.BatchNorm2d:
             args = [ch[f]]
         elif m is Concat:
-            c2 = sum([ch[x] for x in f])
+            c2 = sum([ch[x] for x in f]) # from的通道数相加
         elif m is Detect:
-            args.append([ch[x] for x in f])
+            args.append([ch[x] for x in f]) # [c2,other,yolo1_c,yolo2_c,yolo3_c]
             if isinstance(args[1], int):  # number of anchors
                 args[1] = [list(range(args[1] * 2))] * len(f)
-        elif m is Contract:
+        elif m is Contract:  ## 就是将长宽采样到通道上
             c2 = ch[f] * args[0] ** 2
-        elif m is Expand:
+        elif m is Expand:    ## Contract 的逆过程
             c2 = ch[f] // args[0] ** 2
         else:
             c2 = ch[f]

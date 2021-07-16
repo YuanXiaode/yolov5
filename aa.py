@@ -22,6 +22,4 @@ import datetime
 # import albumentations as A
 import cv2 as cv
 
-a = "aaa"
-a.ge
-print(a.item())
+print(19 / 49)

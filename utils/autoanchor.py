@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from utils.general import colorstr
 
-
+# 保证面积大的anchor对应大stride
 def check_anchor_order(m):
     # Check anchor order against stride order for YOLOv5 Detect() module m, and correct if necessary
     a = m.anchor_grid.prod(-1).view(-1)  # anchor area
@@ -15,7 +15,7 @@ def check_anchor_order(m):
     ds = m.stride[-1] - m.stride[0]  # delta s
     if da.sign() != ds.sign():  # same order
         print('Reversing anchor order')
-        m.anchors[:] = m.anchors.flip(0)
+        m.anchors[:] = m.anchors.flip(0)  # 这里肯定有BUG，anchors都已经除了对应的stride，不能随便调换。正确的应该先调换，再 m.anchors /= m.stride.view(-1, 1, 1)
         m.anchor_grid[:] = m.anchor_grid.flip(0)
 
 
