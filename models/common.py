@@ -24,7 +24,7 @@ def autopad(k, p=None):  # kernel, padding
         p = k // 2 if isinstance(k, int) else [x // 2 for x in k]  # auto-pad
     return p
 
-
+# 深度卷积是 g = c1，大多数情况是满足的。
 def DWConv(c1, c2, k=1, s=1, act=True):
     # Depthwise convolution
     return Conv(c1, c2, k, s, g=math.gcd(c1, c2), act=act)
@@ -77,10 +77,10 @@ class TransformerBlock(nn.Module):
         if self.conv is not None:
             x = self.conv(x)
         b, _, w, h = x.shape
-        p = x.flatten(2).unsqueeze(0).transpose(0, 3).squeeze(3)
+        p = x.flatten(2).unsqueeze(0).transpose(0, 3).squeeze(3) # (bs,c,w,h) -> (w*h,bs,c)
         return self.tr(p + self.linear(p)).unsqueeze(3).transpose(0, 3).reshape(b, self.c2, w, h)
 
-
+# 1x1卷积降维，再3x3卷积
 class Bottleneck(nn.Module):
     # Standard bottleneck
     def __init__(self, c1, c2, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, shortcut, groups, expansion
@@ -213,7 +213,7 @@ class NMS(nn.Module):
     def forward(self, x):
         return non_max_suppression(x[0], self.conf, iou_thres=self.iou, classes=self.classes, max_det=self.max_det)
 
-
+# 大该意思就是将不同类型的输入转化成标准torch.Tensor，再进行inference，返回的是Detections对象
 class AutoShape(nn.Module):
     # input-robust model wrapper for passing cv2/np/PIL/torch inputs. Includes preprocessing, inference and NMS
     conf = 0.25  # NMS confidence threshold
@@ -243,7 +243,7 @@ class AutoShape(nn.Module):
         t = [time_synchronized()]
         p = next(self.model.parameters())  # for device and type
         if isinstance(imgs, torch.Tensor):  # torch
-            with amp.autocast(enabled=p.device.type != 'cpu'):
+            with amp.autocast(enabled=p.device.type != 'cpu'): # 半精度推理
                 return self.model(imgs.to(p.device).type_as(p), augment, profile)  # inference
 
         # Pre-process
@@ -255,16 +255,17 @@ class AutoShape(nn.Module):
                 im, f = Image.open(requests.get(im, stream=True).raw if im.startswith('http') else im), im
                 im = np.asarray(exif_transpose(im))
             elif isinstance(im, Image.Image):  # PIL Image
-                im, f = np.asarray(exif_transpose(im)), getattr(im, 'filename') or f
+                im, f = np.asarray(exif_transpose(im)), getattr(im, 'filename') or f # exif_transpose 将旋转过的图旋转回来
             files.append(Path(f).with_suffix('.jpg').name)
             if im.shape[0] < 5:  # image in CHW
-                im = im.transpose((1, 2, 0))  # reverse dataloader .transpose(2, 0, 1)
-            im = im[..., :3] if im.ndim == 3 else np.tile(im[..., None], 3)  # enforce 3ch input
-            s = im.shape[:2]  # HWC
+                im = im.transpose((1, 2, 0))  # reverse dataloader .transpose(2, 0, 1)  这里先转成HWC，后面会转回来
+            im = im[..., :3] if im.ndim == 3 else np.tile(im[..., None], 3)  # enforce 3ch input N通道或灰度图变3通道
+            s = im.shape[:2]  # HW
             shape0.append(s)  # image shape
             g = (size / max(s))  # gain
             shape1.append([y * g for y in s])
             imgs[i] = im if im.data.contiguous else np.ascontiguousarray(im)  # update
+        # 大概意思就是找到shape1中最大的h和w，将其补成max stride的倍数
         shape1 = [make_divisible(x, int(self.stride.max())) for x in np.stack(shape1, 0).max(0)]  # inference shape
         x = [letterbox(im, new_shape=shape1, auto=False)[0] for im in imgs]  # pad
         x = np.stack(x, 0) if n > 1 else x[0][None]  # stack

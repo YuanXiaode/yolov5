@@ -22,4 +22,16 @@ import datetime
 # import albumentations as A
 import cv2 as cv
 
-print(19 / 49)
+def make_divisible(x, divisor):
+    # Returns x evenly divisible by divisor
+    return math.ceil(x / divisor) * divisor
+
+shape1 = []
+shape1.append((416,288))
+shape1.append((416,250))
+shape1.append((416,249))
+shape1.append((410,299))
+
+print(np.stack(shape1, 0).max(0))
+
+shape1 = [make_divisible(x, 32) for x in np.stack(shape1, 0).max(0)]
