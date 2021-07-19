@@ -360,7 +360,7 @@ def img2label_paths(img_paths):
     return [sb.join(x.rsplit(sa, 1)).rsplit('.', 1)[0] + '.txt' for x in img_paths]
 
 ## 输出： img (bs,h,w,c)  RGB格式 0-255
-##       label (N,6)  N指一个bs中所有label的数量，后面的6指的是 (image_index,class,x,y,w,h)  x,y,w,h 是归一化的,x,y,指
+##       label (N,6)  N指一个bs中所有label的数量，后面的6指的是 (image_index,class,x,y,w,h)  x,y,w,h 是归一化的,x,y,指中心点坐标
 ##       path  元组， 每个元素都是图片路径
 ##       shapes 元组，每个元素都是 (h0, w0), ((h / h0, w / w0), pad)
 class LoadImagesAndLabels(Dataset):  # for training/testing

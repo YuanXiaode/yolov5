@@ -352,16 +352,19 @@ class Detections:
         self.display(render=True)  # render results
         return self.imgs
 
+    # 将model.xyxy等换成pd格式
     def pandas(self):
         # return detections as pandas DataFrames, i.e. print(results.pandas().xyxy[0])
         new = copy(self)  # return copy
         ca = 'xmin', 'ymin', 'xmax', 'ymax', 'confidence', 'class', 'name'  # xyxy columns
         cb = 'xcenter', 'ycenter', 'width', 'height', 'confidence', 'class', 'name'  # xywh columns
         for k, c in zip(['xyxy', 'xyxyn', 'xywh', 'xywhn'], [ca, ca, cb, cb]):
+            # 注意维度，getattr(self, k) 是个list，每个元素是(Ni,6)，共bs个元素
             a = [[x[:5] + [int(x[5]), self.names[int(x[5])]] for x in x.tolist()] for x in getattr(self, k)]  # update
             setattr(new, k, [pd.DataFrame(x, columns=c) for x in a])
         return new
 
+    # 将Detections（bs个image) 换成[bs个 Detections(imgi)]
     def tolist(self):
         # return a list of Detections objects, i.e. 'for result in results.tolist():'
         x = [Detections([self.imgs[i]], [self.pred[i]], self.names, self.s) for i in range(self.n)]

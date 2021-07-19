@@ -142,7 +142,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     # Optimizer
     nbs = 64  # nominal batch size
     accumulate = max(round(nbs / batch_size), 1)  # accumulate loss before optimizing
-    hyp['weight_decay'] *= batch_size * accumulate / nbs  # scale weight_decay
+    hyp['weight_decay'] *= batch_size * accumulate / nbs  # scale weight_decay 可以看出 weight_decay 的基准就是 batch_size = 64
     logger.info(f"Scaled weight_decay = {hyp['weight_decay']}")
 
     pg0, pg1, pg2 = [], [], []  # optimizer parameter groups
@@ -213,7 +213,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     if cuda and RANK == -1 and torch.cuda.device_count() > 1:
         logging.warning('DP not recommended, instead use torch.distributed.run for best DDP Multi-GPU results.\n'
                         'See Multi-GPU Tutorial at https://github.com/ultralytics/yolov5/issues/475 to get started.')
-        model = torch.nn.DataParallel(model)
+        model = torch.nn.DataParallel(model)  # ？为啥先DP，后面又DDP
 
     # SyncBatchNorm
     if opt.sync_bn and cuda and RANK != -1:
@@ -225,7 +225,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=RANK,
                                             workers=workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '))
-    mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
+    mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class  训练集中最大的label编号
     nb = len(dataloader)  # number of batches
     assert mlc < nc, 'Label class %g exceeds nc=%g in %s. Possible class labels are 0-%g' % (mlc, nc, data, nc - 1)
 
@@ -249,13 +249,14 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             # Anchors
             if not opt.noautoanchor:
                 check_anchors(dataset, model=model, thr=hyp['anchor_t'], imgsz=imgsz)
-            model.half().float()  # pre-reduce anchor precision
+            model.half().float()  # pre-reduce anchor precision 为了较少计算量？会不会影响metric哦~
 
     # DDP mode
     if cuda and RANK != -1:
         model = DDP(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
 
-    # Model parameters
+    # Model parameters 这些是loss的系数
+    # 乘这些系数是为了让损失与层数、类别，尺寸无关
     hyp['box'] *= 3. / nl  # scale to layers
     hyp['cls'] *= nc / 80. * 3. / nl  # scale to classes and layers
     hyp['obj'] *= (imgsz / 640) ** 2 * 3. / nl  # scale to image size and layers
@@ -263,7 +264,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     model.nc = nc  # attach number of classes to model
     model.hyp = hyp  # attach hyperparameters to model
     model.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
-    model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
+    model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights 类别数目越多，权重越小
     model.names = names
 
     # Start training

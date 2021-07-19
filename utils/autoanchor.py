@@ -15,7 +15,7 @@ def check_anchor_order(m):
     ds = m.stride[-1] - m.stride[0]  # delta s
     if da.sign() != ds.sign():  # same order
         print('Reversing anchor order')
-        m.anchors[:] = m.anchors.flip(0)  # 这里肯定有BUG，anchors都已经除了对应的stride，不能随便调换。正确的应该先调换，再 m.anchors /= m.stride.view(-1, 1, 1)
+        m.anchors[:] = m.anchors.flip(0)  # 这里肯定有BUG，anchors都已经除了对应的stride，不能随便调换。正确的应该先调换anchors，再 m.anchors /= m.stride.view(-1, 1, 1)
         m.anchor_grid[:] = m.anchor_grid.flip(0)
 
 
@@ -24,16 +24,18 @@ def check_anchors(dataset, model, thr=4.0, imgsz=640):
     prefix = colorstr('autoanchor: ')
     print(f'\n{prefix}Analyzing anchors... ', end='')
     m = model.module.model[-1] if hasattr(model, 'module') else model.model[-1]  # Detect()
-    shapes = imgsz * dataset.shapes / dataset.shapes.max(1, keepdims=True)
+    # dataset.shapes: (N,2)，N是总的图片数量
+    shapes = imgsz * dataset.shapes / dataset.shapes.max(1, keepdims=True)  # (N,2)
     scale = np.random.uniform(0.9, 1.1, size=(shapes.shape[0], 1))  # augment scale
-    wh = torch.tensor(np.concatenate([l[:, 3:5] * s for s, l in zip(shapes * scale, dataset.labels)])).float()  # wh
+    wh = torch.tensor(np.concatenate([l[:, 3:5] * s for s, l in zip(shapes * scale, dataset.labels)])).float()  # wh  dataset.labels:(clas,xywh)
 
+    # 判断从label中获取的box和给定的anchors的符合程度的指标
     def metric(k):  # compute metric
-        r = wh[:, None] / k[None]
-        x = torch.min(r, 1. / r).min(2)[0]  # ratio metric
+        r = wh[:, None] / k[None]  # wh[:, None]:(M,1,2)； k[None]:(1,N,2)； r:(M,N,2)
+        x = torch.min(r, 1. / r).min(2)[0]  # ratio metric  shape (M,N) 每个框长宽比最小值
         best = x.max(1)[0]  # best_x
-        aat = (x > 1. / thr).float().sum(1).mean()  # anchors above threshold
-        bpr = (best > 1. / thr).float().mean()  # best possible recall
+        aat = (x > 1. / thr).float().sum(1).mean()  # anchors above threshold  这个从公式上看，表示每个box平均和aat个anchor吻合较好
+        bpr = (best > 1. / thr).float().mean()  # best possible recall     和每个box最相符的anchor 的吻合程度大于阈值的概率，召回率的概念
         return bpr, aat
 
     anchors = m.anchor_grid.clone().cpu().view(-1, 2)  # current anchors
@@ -50,14 +52,14 @@ def check_anchors(dataset, model, thr=4.0, imgsz=640):
         if new_bpr > bpr:  # replace anchors
             anchors = torch.tensor(anchors, device=m.anchors.device).type_as(m.anchors)
             m.anchor_grid[:] = anchors.clone().view_as(m.anchor_grid)  # for inference
-            m.anchors[:] = anchors.clone().view_as(m.anchors) / m.stride.to(m.anchors.device).view(-1, 1, 1)  # loss
+            m.anchors[:] = anchors.clone().view_as(m.anchors) / m.stride.to(m.anchors.device).view(-1, 1, 1)  # loss m.anchors 要归一化
             check_anchor_order(m)
             print(f'{prefix}New anchors saved to model. Update model *.yaml to use these anchors in the future.')
         else:
             print(f'{prefix}Original anchors better than new anchors. Proceeding with original anchors.')
     print('')  # newline
 
-
+# 用kmean聚类出n个anchors，并进化 gen 次
 def kmean_anchors(path='./data/coco128.yaml', n=9, img_size=640, thr=4.0, gen=1000, verbose=True):
     """ Creates kmeans-evolved anchors from training dataset
 
@@ -123,7 +125,7 @@ def kmean_anchors(path='./data/coco128.yaml', n=9, img_size=640, thr=4.0, gen=10
     # Kmeans calculation
     print(f'{prefix}Running kmeans for {n} anchors on {len(wh)} points...')
     s = wh.std(0)  # sigmas for whitening
-    k, dist = kmeans(wh / s, n, iter=30)  # points, mean distance
+    k, dist = kmeans(wh / s, n, iter=30)  # points, mean distance  k (N,2)
     assert len(k) == n, print(f'{prefix}ERROR: scipy.cluster.vq.kmeans requested {n} points but returned only {len(k)}')
     k *= s
     wh = torch.tensor(wh, dtype=torch.float32)  # filtered

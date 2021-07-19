@@ -291,6 +291,8 @@ def plot_labels(labels, names=(), save_dir=Path(''), loggers=None):
     nc = int(c.max() + 1)  # number of classes
     x = pd.DataFrame(b.transpose(), columns=['x', 'y', 'width', 'height'])
 
+    # 多变量关系图
+    # corner=True: 只画左下角; diag_kind，diag_kws: 设置对角线图  ；kind, plot_kws：设置非对角图
     # seaborn correlogram
     sn.pairplot(x, corner=True, diag_kind='auto', kind='hist', diag_kws=dict(bins=50), plot_kws=dict(pmax=0.9))
     plt.savefig(save_dir / 'labels_correlogram.jpg', dpi=200)
@@ -299,7 +301,7 @@ def plot_labels(labels, names=(), save_dir=Path(''), loggers=None):
     # matplotlib labels
     matplotlib.use('svg')  # faster
     ax = plt.subplots(2, 2, figsize=(8, 8), tight_layout=True)[1].ravel()
-    y = ax[0].hist(c, bins=np.linspace(0, nc, nc + 1) - 0.5, rwidth=0.8)
+    y = ax[0].hist(c, bins=np.linspace(0, nc, nc + 1) - 0.5, rwidth=0.8)  #类别直方图
     # [y[2].patches[i].set_color([x / 255 for x in colors(i)]) for i in range(nc)]  # update colors bug #3195
     ax[0].set_ylabel('instances')
     if 0 < len(names) < 30:
@@ -307,8 +309,8 @@ def plot_labels(labels, names=(), save_dir=Path(''), loggers=None):
         ax[0].set_xticklabels(names, rotation=90, fontsize=10)
     else:
         ax[0].set_xlabel('classes')
-    sn.histplot(x, x='x', y='y', ax=ax[2], bins=50, pmax=0.9)
-    sn.histplot(x, x='width', y='height', ax=ax[3], bins=50, pmax=0.9)
+    sn.histplot(x, x='x', y='y', ax=ax[2], bins=50, pmax=0.9)  ## # xy关系图
+    sn.histplot(x, x='width', y='height', ax=ax[3], bins=50, pmax=0.9) # wh关系图
 
     # rectangles
     labels[:, 1:3] = 0.5  # center
