@@ -340,7 +340,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 pred = model(imgs)  # forward
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:
-                    # 这里搞不太懂，虽然DDP的 bs = 原bs / WORLD_SIZE，但是backward()时会将梯度汇总相加，这里需要乘WORLD_SIZE吗？
+                    # 这里搞不太懂，虽然DDP的 bs = 原bs / WORLD_SIZE，但是backward()时会将梯度汇总相加，这里需要乘WORLD_SIZE吗？ all_reduce 时是将各个进程的梯度平均还是相加？
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
                 if opt.quad: # quad模式四图合一,bs是正常的1/4，又因为Loss = bs(lbox + lobj + lcls),因此乘4
                     loss *= 4.
