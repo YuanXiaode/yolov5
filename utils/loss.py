@@ -108,8 +108,8 @@ class ComputeLoss:
             BCEcls, BCEobj = FocalLoss(BCEcls, g), FocalLoss(BCEobj, g)
 
         det = model.module.model[-1] if is_parallel(model) else model.model[-1]  # Detect() module
-        # 每层权重，分辨率越大权重越大，用在置信度损失里。这是合理的，因为obj都是均值，但是分辨率大，计算的pred的数目就越多，因此应该给更高的权重
-        # 注意类别损失和iou并不用权重，原因是类别损失和iou损失只有在有target才会计算，不同分辨率计算的数目是一样的
+        # 每层权重，分辨率越大权重越大，用在置信度损失里。这是合理的，因为loss是所有元素的均值，但是分辨率大，计算的pred的数目就越多，因此应该给更高的权重
+        # 注意类别损失和iou并不用权重，原因是类别损失和iou损失只有在有target才会计算，不同分辨率的元素数目是一样的
         self.balance = {3: [4.0, 1.0, 0.4]}.get(det.nl, [4.0, 1.0, 0.25, 0.06, .02])  # P3-P7
         self.ssi = list(det.stride).index(16) if autobalance else 0  # stride 16 index
         self.BCEcls, self.BCEobj, self.gr, self.hyp, self.autobalance = BCEcls, BCEobj, model.gr, h, autobalance

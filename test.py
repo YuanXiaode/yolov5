@@ -87,7 +87,7 @@ def run(data,
         model.half()
 
     # Configure
-    model.eval() # 其实在 attempt_load 里用了.eval()
+    model.eval() # 虽然在 attempt_load 里用了.eval()，但train.py中调用test时没有经过attempt_load
     is_coco = type(data['val']) is str and data['val'].endswith('coco/val2017.txt')  # COCO dataset
     nc = 1 if single_cls else int(data['nc'])  # number of classes
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95

@@ -249,14 +249,14 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             # Anchors
             if not opt.noautoanchor:
                 check_anchors(dataset, model=model, thr=hyp['anchor_t'], imgsz=imgsz)
-            model.half().float()  # pre-reduce anchor precision 为了较少计算量？会不会影响metric哦~
+            model.half().float()  # pre-reduce anchor precision 为啥这么操作？
 
     # DDP mode
     if cuda and RANK != -1:
         model = DDP(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
 
     # Model parameters 这些是loss的系数
-    # 乘这些系数是为了让损失与层数、类别，尺寸无关
+    # 有点疑惑，为啥需要乘nc / 80和(imgsz / 640) ** 2，这不是会导致类别多，imgsz大时，总的loss太大么？
     hyp['box'] *= 3. / nl  # scale to layers
     hyp['cls'] *= nc / 80. * 3. / nl  # scale to classes and layers
     hyp['obj'] *= (imgsz / 640) ** 2 * 3. / nl  # scale to image size and layers
@@ -292,7 +292,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 iw = labels_to_image_weights(dataset.labels, nc=nc, class_weights=cw)  # image weights
                 dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
             # Broadcast if DDP
-            if RANK != -1:
+            if RANK != -1: # RANK = 0的用计算值，RANK > 0的用接收0的广播
                 indices = (torch.tensor(dataset.indices) if RANK == 0 else torch.zeros(dataset.n)).int()
                 dist.broadcast(indices, 0)
                 if RANK != 0:
@@ -303,6 +303,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         # dataset.mosaic_border = [b - imgsz, -b]  # height, width borders
 
         mloss = torch.zeros(4, device=device)  # mean losses
+        # 查了一下资料，DistributedSampler 在torch1.2之后，多了shuffle功能来对数据进行random，random的
+        # 随机种子值就是epoch。因此需要修改self.epoch，从而保证每个epoch随机生成的indices是不一样的
         if RANK != -1:
             dataloader.sampler.set_epoch(epoch)
         pbar = enumerate(dataloader)
@@ -339,7 +341,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
-                if opt.quad:
+                if opt.quad: # quad模式四图合一,bs是正常的1/4，又因为Loss = bs(lbox + lobj + lcls),因此乘4
                     loss *= 4.
 
             # Backward
@@ -369,7 +371,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                     if loggers['tb'] and ni == 0:  # TensorBoard
                         with warnings.catch_warnings():
                             warnings.simplefilter('ignore')  # suppress jit trace warning
-                            loggers['tb'].add_graph(torch.jit.trace(de_parallel(model), imgs[0:1], strict=False), [])
+                            loggers['tb'].add_graph(torch.jit.trace(de_parallel(model), imgs[0:1], strict=False), [])   # model graph torch.jit:转化为语言无关的TorchScript模型
                 elif plots and ni == 10 and loggers['wandb']:
                     wandb_logger.log({'Mosaics': [loggers['wandb'].Image(str(x), caption=x.name) for x in
                                                   save_dir.glob('train*.jpg') if x.exists()]})
@@ -466,7 +468,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                              save_dir=save_dir,
                                              save_json=True,
                                              plots=False)
-
             # Strip optimizers
             for f in last, best:
                 if f.exists():
