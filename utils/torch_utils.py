@@ -30,10 +30,10 @@ def torch_distributed_zero_first(local_rank: int):
     """
     Decorator to make all processes in distributed training wait for each local_master to do something.
     """
-    if local_rank not in [-1, 0]:
+    if local_rank not in [-1, 0]: # 当前进程号不是 -1(CPU) 和 0 (主进程)，就设置栏杆阻塞当前进程，等待主进程执行完上下文管理器的内容
         dist.barrier()
     yield
-    if local_rank == 0:
+    if local_rank == 0: # 主进程执行完毕，放开阻塞
         dist.barrier()
 
 

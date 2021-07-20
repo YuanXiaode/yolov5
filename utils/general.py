@@ -55,7 +55,7 @@ class timeout(contextlib.ContextDecorator):
         if self.suppress and exc_type is TimeoutError:  # Suppress TimeoutError
             return True
 
-
+# 注意细节，主进程低等级，其他进程设置高等级，防止其他进程打印常用信息
 def set_logging(rank=-1, verbose=True):
     logging.basicConfig(
         format="%(message)s",

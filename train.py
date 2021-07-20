@@ -84,7 +84,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     # Configure
     plots = not evolve  # create plots
     cuda = device.type != 'cpu'
-    init_seeds(1 + RANK)
+    init_seeds(1 + RANK) # 注意这里，DDP每个进程的RANK是不一样的，因此随机种子不一样。如果使用同样的种子，会造成不同进程的mosaic等数据增强方法同态性
     with open(data) as f:
         data_dict = yaml.safe_load(f)  # data dict
 
@@ -115,7 +115,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     # Model
     pretrained = weights.endswith('.pt')
     if pretrained:
-        with torch_distributed_zero_first(RANK):
+        with torch_distributed_zero_first(RANK): # 同步，等主进程下载完，其他进程再加载数据
             weights = attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
         model = Model(cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
@@ -213,7 +213,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     if cuda and RANK == -1 and torch.cuda.device_count() > 1:
         logging.warning('DP not recommended, instead use torch.distributed.run for best DDP Multi-GPU results.\n'
                         'See Multi-GPU Tutorial at https://github.com/ultralytics/yolov5/issues/475 to get started.')
-        model = torch.nn.DataParallel(model)  # ？为啥先DP，后面又DDP
+        model = torch.nn.DataParallel(model)  # ？这里DP没啥用，后面会被DDP覆盖掉
 
     # SyncBatchNorm
     if opt.sync_bn and cuda and RANK != -1:
@@ -340,15 +340,16 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 pred = model(imgs)  # forward
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:
+                    # 这里搞不太懂，虽然DDP的 bs = 原bs / WORLD_SIZE，但是backward()时会将梯度汇总相加，这里需要乘WORLD_SIZE吗？
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
                 if opt.quad: # quad模式四图合一,bs是正常的1/4，又因为Loss = bs(lbox + lobj + lcls),因此乘4
                     loss *= 4.
 
             # Backward
-            scaler.scale(loss).backward()
+            scaler.scale(loss).backward() # 这个阶段发生 DDP 的 gradient all reduce
 
             # Optimize
-            if ni - last_opt_step >= accumulate:
+            if ni - last_opt_step >= accumulate:  # 梯度累加，累加 accumulate 次再更新参数， accumulate = 64 / bs
                 scaler.step(optimizer)  # optimizer.step
                 scaler.update()
                 optimizer.zero_grad()
