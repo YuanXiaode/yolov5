@@ -24,7 +24,7 @@ import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 import torch.utils.data
 import yaml
-from torch.cuda import amp
+from torch.cuda import amp  # 混合精度训练
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -50,7 +50,7 @@ from utils.metrics import fitness
 logger = logging.getLogger(__name__)
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
-WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
+WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1)) # 总线程数， = 节点数（就是电脑） x 每个节点的GPU数目
 
 
 def train(hyp,  # path/to/hyp.yaml or hyp dictionary
@@ -220,7 +220,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
         logger.info('Using SyncBatchNorm()')
 
-    # Trainloader
+    # Trainloader 注意，DDP模型的batch_size * WORLD_SIZE = 总batch_size
     dataloader, dataset = create_dataloader(train_path, imgsz, batch_size // WORLD_SIZE, gs, single_cls,
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=RANK,
                                             workers=workers,
