@@ -21,7 +21,7 @@ from utils.datasets import LoadStreams, LoadImages
 from utils.general import check_img_size, check_requirements, check_imshow, colorstr, non_max_suppression, \
     apply_classifier, scale_coords, xyxy2xywh, strip_optimizer, set_logging, increment_path, save_one_box
 from utils.plots import colors, plot_one_box
-from utils.torch_utils import select_device, load_classifier, time_synchronized
+from utils.torch_utils import select_device, load_classifier, time_sync
 
 
 @torch.no_grad()
@@ -40,6 +40,7 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
         classes=None,  # filter by class: --class 0, or --class 0 2 3
         agnostic_nms=False,  # class-agnostic NMS
         augment=False,  # augmented inference
+        visualize=False,  # visualize features
         update=False,  # update all models
         project='runs/detect',  # save results to project/name
         name='exp',  # save results to project/name
@@ -97,12 +98,14 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
         # Inference
-        t1 = time_synchronized()
-        pred = model(img, augment=augment)[0] # (bs,n,85)
+        t1 = time_sync()
+        pred = model(img,
+                     augment=augment,
+                     visualize=increment_path(save_dir / Path(path).stem, mkdir=True) if visualize else False)[0]
 
         # Apply NMS
         pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
-        t2 = time_synchronized()
+        t2 = time_sync()
 
         # Apply Classifier
         if classify:
@@ -199,6 +202,7 @@ def parse_opt():
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
+    parser.add_argument('--visualize', action='store_true', help='visualize features')
     parser.add_argument('--update', action='store_true', help='update all models')
     parser.add_argument('--project', default='runs/detect', help='save results to project/name')
     parser.add_argument('--name', default='exp', help='save results to project/name')
