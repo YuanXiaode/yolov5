@@ -114,6 +114,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
     # Model
     pretrained = weights.endswith('.pt')
+    # 依我看的资料，https://zhuanlan.zhihu.com/p/187610959，这里可以加速下。
+    # 即创建模型时所有进程都可创建，但加载参数时，只需要 RANK = -1 or 0 加载就行，然后通过model = DDP(model)，就能将参数广播到所有进程
     if pretrained:
         with torch_distributed_zero_first(RANK): # 同步，等主进程下载完，其他进程再加载数据
             weights = attempt_download(weights)  # download if not found locally
@@ -154,6 +156,9 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         elif hasattr(v, 'weight') and isinstance(v.weight, nn.Parameter):
             pg1.append(v.weight)  # apply decay
 
+    # 注意这里，为了保证不同进程的模型更新是一致的，需要保证optimizer初始化是一致的。
+    # pytorch的机制是如果model初始化一致，则optimizer初始化也一致。
+    # 因此要不就是所有进程先load参数，要不就是model = DDP(model)后才初始化optimizer。
     if opt.adam:
         optimizer = optim.Adam(pg0, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
     else:
@@ -216,6 +221,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         model = torch.nn.DataParallel(model)  # ？这里DP没啥用，后面会被DDP覆盖掉
 
     # SyncBatchNorm
+    # BN的计算基于几个bs的数据，在分布式系统中，bs = 原bs / WORLD_SIZE，bs很小，计算出的BN参数自然不好。
+    # SyncBatchNorm让不同进程能通信各自的 batch_mean 和 batch_variance，能整合原bs的的全部数据
     if opt.sync_bn and cuda and RANK != -1:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
         logger.info('Using SyncBatchNorm()')
@@ -340,7 +347,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 pred = model(imgs)  # forward
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:
-                    # 这里搞不太懂，虽然DDP的 bs = 原bs / WORLD_SIZE，但是backward()时会将梯度汇总相加，这里需要乘WORLD_SIZE吗？ all_reduce 时是将各个进程的梯度平均还是相加？
+                    # 猜测一下，DDP的 bs = 原bs / WORLD_SIZE，然后每个进程用这个loss计算梯度，再通过ring_allreduce相互通信，最后全部进程都用平均参数更新模型。
+                    # 因此得到的平均梯度是基于 原bs / WORLD_SIZE 计算的loss，要变成基于原bs，需要 loss *= WORLD_SIZE
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
                 if opt.quad: # quad模式四图合一,bs是正常的1/4，又因为Loss = bs(lbox + lobj + lcls),因此乘4
                     loss *= 4.
