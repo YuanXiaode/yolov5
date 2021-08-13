@@ -211,6 +211,7 @@ def random_perspective(im, targets=(), segments=(), degrees=10, translate=.1, sc
 
 # 复制粘贴增强，效果不错的，比mixup强
 # 下面代码的意思是，随机挑几个目标，将其复制到水平对称位置，且增加对应的labels和segments
+# 这个增强的缺点是必须用分割标签，而分割标签是比较昂贵的。
 def copy_paste(im, labels, segments, p=0.5):
     # Implement Copy-Paste augmentation https://arxiv.org/abs/2012.07177, labels as nx5 np.array(cls, xyxy)
     n = len(segments)

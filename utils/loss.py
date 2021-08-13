@@ -58,7 +58,7 @@ class FocalLoss(nn.Module):
         else:  # 'none'
             return loss
 
-
+# QFL https://zhuanlan.zhihu.com/p/147691786
 class QFocalLoss(nn.Module):
     # Wraps Quality focal loss around existing loss_fcn(), i.e. criteria = FocalLoss(nn.BCEWithLogitsLoss(), gamma=1.5)
     def __init__(self, loss_fcn, gamma=1.5, alpha=0.25):
